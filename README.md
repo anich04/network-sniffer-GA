@@ -2,7 +2,7 @@
 This is the Major Project
 
 
-*** FOLDER STRUCTURE ***
+***FOLDER STRUCTURE***
 /Network_Packet_Analyzer_GA/
 │
 ├── src/
