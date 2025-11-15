@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pkl
+*.sqlite3
+venv/
+env/
+.env
+src/data/raw/*.pcap
+src/data/*.csv
+.DS_Store
