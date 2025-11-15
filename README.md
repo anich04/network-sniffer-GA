@@ -1,27 +1,43 @@
 "# network-sniffer-GA" 
 This is the Major Project
 
-
 *** FOLDER  STRUCTURE ***
 /Network_Packet_Analyzer_GA/
+=======
+*** Folder Structure ***
+Network-Packet-Analyzer-GA/
+
 │
 ├── src/
 │   ├── packet_capture.py
-│   ├── feature_extraction.py
-│   ├── ga_engine/
-│   │       ├── ga_train.py
-│   │       ├── fitness_function.py
-│   │       ├── apply_ga_rules.py
-│   │       └── ga_model.pkl
+│   ├── extract_features.py
 │   ├── analyzer.py
 │   ├── utils.py
-│   └── routes.py
+│   │
+│   ├── ga_engine/
+│   │   ├── ga_train.py
+│   │   ├── fitness_function.py
+│   │   ├── apply_ga_rules.py
+│   │   └── ga_model.pkl
+│   │
+│   └── data/
+│       ├── sample.pcap
+│       ├── features.csv
+│       └── ga_logs.csv
 │
-├── dashboard/
-│   ├── templates/
-│   ├── static/
-│   └── app.py
+├── notebooks/
+│   ├── GA_Training.ipynb
+│   ├── Feature_Analysis.ipynb
 │
-└── tests/
-    ├── sample_pcaps/
-    └── evaluation_reports/
+├── tests/
+│   ├── test_pcaps/
+│   ├── evaluation_report.csv
+│
+├── docs/
+│   ├── Project_Report.pdf
+│   ├── Architecture_Diagram.png
+│   ├── GA_Flowchart.png
+│
+├── README.md
+├── requirements.txt
+└── .gitignore
