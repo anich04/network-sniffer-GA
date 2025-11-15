@@ -1,7 +1,0 @@
-scapy
-pandas
-numpy
-matplotlib
-deap
-scikit-learn
-joblib
