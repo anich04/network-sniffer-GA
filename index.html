@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GA Network Capture — Optimization Engine</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ─── Reset & Base ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #060d1f;
+      --bg-2:        #0b1530;
+      --bg-card:     rgba(13, 25, 60, 0.55);
+      --border:      rgba(80, 140, 255, 0.18);
+      --neon-blue:   #3b82f6;
+      --neon-purple: #a855f7;
+      --neon-cyan:   #06b6d4;
+      --neon-green:  #10b981;
+      --text:        #e2e8f0;
+      --text-muted:  #64748b;
+      --radius:      16px;
+      --transition:  0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      animation: fadeIn 0.6s ease both;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ─── Background Grid ─────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(59,130,246,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,130,246,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    /* ─── Layout ──────────────────────────────────────────────────── */
+    .wrapper {
+      position: relative; z-index: 1;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    /* ─── Glassmorphism Card ──────────────────────────────────────── */
+    .glass {
+      background: var(--bg-card);
+      backdrop-filter: blur(20px) saturate(160%);
+      -webkit-backdrop-filter: blur(20px) saturate(160%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+    .glass:hover { transform: translateY(-3px); box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 0 24px rgba(59,130,246,0.1), inset 0 1px 0 rgba(255,255,255,0.08); }
+
+    /* ─── Header ──────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 40px;
+      padding: 28px 36px;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 18px; }
+
+    .logo-icon {
+      width: 52px; height: 52px;
+      background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+      border-radius: 14px;
+      display: grid; place-items: center;
+      font-size: 22px;
+      box-shadow: 0 0 20px rgba(59,130,246,0.4);
+      flex-shrink: 0;
+    }
+
+    .header-text h1 {
+      font-size: 1.6rem; font-weight: 700;
+      background: linear-gradient(90deg, #93c5fd, #c4b5fd);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.3px;
+    }
+    .header-text p { color: var(--text-muted); font-size: 0.85rem; margin-top: 3px; }
+
+    /* Status Badge */
+    .status-badge {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 20px;
+      border-radius: 40px;
+      font-size: 0.82rem; font-weight: 600; letter-spacing: 0.5px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.3);
+      transition: all var(--transition);
+    }
+    .status-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #64748b;
+      transition: background var(--transition), box-shadow var(--transition);
+    }
+    .status-badge.idle   .status-dot { background: #64748b; }
+    .status-badge.running .status-dot { background: var(--neon-blue); box-shadow: 0 0 0 0 rgba(59,130,246,0.6); animation: pulse 1.4s infinite; }
+    .status-badge.completed .status-dot { background: var(--neon-green); box-shadow: 0 0 8px rgba(16,185,129,0.6); }
+    .status-badge.error  .status-dot { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.6); }
+
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0   rgba(59,130,246,0.7); }
+      70%  { box-shadow: 0 0 0 10px rgba(59,130,246,0); }
+      100% { box-shadow: 0 0 0 0   rgba(59,130,246,0); }
+    }
+
+    /* ─── Section Label ───────────────────────────────────────────── */
+    .section-label {
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--neon-blue);
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after {
+      content: ''; flex: 1; height: 1px;
+      background: linear-gradient(90deg, var(--border), transparent);
+    }
+
+    /* ─── API Config Banner ───────────────────────────────────────── */
+    .api-config {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      padding: 16px 22px; margin-bottom: 28px;
+      border-left: 3px solid var(--neon-blue);
+    }
+    .api-config label { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
+    .api-config input {
+      flex: 1; min-width: 260px;
+      background: rgba(0,0,0,0.35); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 14px;
+      color: var(--text); font-size: 0.88rem; font-family: 'Courier New', monospace;
+      outline: none; transition: border var(--transition);
+    }
+    .api-config input:focus { border-color: var(--neon-blue); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+    .api-config .check-btn {
+      padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border);
+      background: rgba(59,130,246,0.12); color: var(--neon-blue);
+      font-size: 0.82rem; font-weight: 600; cursor: pointer;
+      transition: all var(--transition);
+    }
+    .api-config .check-btn:hover { background: rgba(59,130,246,0.22); }
+    .health-indicator {
+      font-size: 0.78rem; font-weight: 600;
+      padding: 5px 12px; border-radius: 20px;
+      background: rgba(16,185,129,0.12); color: var(--neon-green);
+      border: 1px solid rgba(16,185,129,0.25);
+      display: none;
+    }
+    .health-indicator.show { display: inline-flex; align-items: center; gap: 5px; }
+    .health-indicator.err  { background: rgba(239,68,68,0.12); color: #ef4444; border-color: rgba(239,68,68,0.25); }
+
+    /* ─── Control Panel ───────────────────────────────────────────── */
+    .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 28px 32px; margin-bottom: 28px; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 13px 28px; border-radius: 12px;
+      font-size: 0.9rem; font-weight: 700;
+      cursor: pointer; border: none; outline: none;
+      transition: all var(--transition); position: relative; overflow: hidden;
+    }
+    .btn::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(rgba(255,255,255,0.08), transparent);
+      opacity: 0; transition: opacity var(--transition);
+    }
+    .btn:hover::after { opacity: 1; }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #1d4ed8, #4f46e5);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(59,130,246,0.35);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 28px rgba(59,130,246,0.5), 0 0 0 1px rgba(99,102,241,0.5); transform: translateY(-1px); }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(168,85,247,0.3);
+    }
+    .btn-secondary:hover { box-shadow: 0 6px 28px rgba(168,85,247,0.5), 0 0 0 1px rgba(168,85,247,0.5); transform: translateY(-1px); }
+
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.25);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    .btn.loading .spinner { display: block; }
+    .btn.loading .btn-icon { display: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Error Block ─────────────────────────────────────────────── */
+    .error-block {
+      display: none; align-items: center; gap: 12px;
+      padding: 16px 22px; border-radius: 12px; margin-bottom: 24px;
+      background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25);
+      animation: slideIn 0.3s ease both;
+    }
+    .error-block.show { display: flex; }
+    .error-icon { font-size: 1.2rem; flex-shrink: 0; }
+    .error-msg { flex: 1; font-size: 0.88rem; color: #fca5a5; }
+    .retry-btn {
+      padding: 7px 16px; border-radius: 8px; border: 1px solid rgba(239,68,68,0.35);
+      background: rgba(239,68,68,0.12); color: #fca5a5;
+      font-size: 0.8rem; font-weight: 600; cursor: pointer;
+      transition: all var(--transition);
+    }
+    .retry-btn:hover { background: rgba(239,68,68,0.22); }
+
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+
+    /* ─── Strategy Card ───────────────────────────────────────────── */
+    .strategy-card { padding: 28px 32px; margin-bottom: 28px; }
+    .strategy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 20px; margin-top: 18px; }
+
+    .strategy-item {
+      background: rgba(0,0,0,0.25); border: 1px solid var(--border);
+      border-radius: 12px; padding: 18px 20px; text-align: center;
+      transition: all var(--transition);
+    }
+    .strategy-item:hover { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.06); }
+
+    .strategy-icon { font-size: 1.6rem; margin-bottom: 8px; }
+    .strategy-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .strategy-value { font-size: 1.25rem; font-weight: 700; color: #93c5fd; }
+    .strategy-badge {
+      display: inline-block; margin-top: 6px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 0.7rem; font-weight: 700;
+      background: rgba(59,130,246,0.15); color: var(--neon-blue);
+      border: 1px solid rgba(59,130,246,0.25);
+    }
+    .placeholder-text { color: var(--text-muted); font-size: 0.85rem; font-style: italic; text-align: center; padding: 24px 0; }
+
+    /* ─── Metrics Grid ────────────────────────────────────────────── */
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 16px; margin-bottom: 28px; }
+
+    .metric-card { padding: 22px 24px; position: relative; overflow: hidden; }
+    .metric-card::before {
+      content: ''; position: absolute; top: -20px; right: -20px;
+      width: 80px; height: 80px; border-radius: 50%;
+      opacity: 0.08; transition: opacity var(--transition);
+    }
+    .metric-card:hover::before { opacity: 0.14; }
+    .metric-card.blue::before   { background: var(--neon-blue);   box-shadow: 0 0 40px var(--neon-blue); }
+    .metric-card.purple::before { background: var(--neon-purple); box-shadow: 0 0 40px var(--neon-purple); }
+    .metric-card.cyan::before   { background: var(--neon-cyan);   box-shadow: 0 0 40px var(--neon-cyan); }
+    .metric-card.green::before  { background: var(--neon-green);  box-shadow: 0 0 40px var(--neon-green); }
+    .metric-card.orange::before { background: #f59e0b; box-shadow: 0 0 40px #f59e0b; }
+
+    .metric-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .metric-icon-wrap {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: grid; place-items: center; font-size: 1rem;
+    }
+    .blue   .metric-icon-wrap { background: rgba(59,130,246,0.15);  color: var(--neon-blue); }
+    .purple .metric-icon-wrap { background: rgba(168,85,247,0.15);  color: var(--neon-purple); }
+    .cyan   .metric-icon-wrap { background: rgba(6,182,212,0.15);   color: var(--neon-cyan); }
+    .green  .metric-icon-wrap { background: rgba(16,185,129,0.15);  color: var(--neon-green); }
+    .orange .metric-icon-wrap { background: rgba(245,158,11,0.15);  color: #f59e0b; }
+
+    .metric-trend { font-size: 0.72rem; font-weight: 600; color: var(--neon-green); }
+    .metric-value { font-size: 1.8rem; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+    .blue   .metric-value { color: #93c5fd; }
+    .purple .metric-value { color: #c4b5fd; }
+    .cyan   .metric-value { color: #67e8f9; }
+    .green  .metric-value { color: #6ee7b7; }
+    .orange .metric-value { color: #fcd34d; }
+
+    .metric-label { font-size: 0.78rem; color: var(--text-muted); }
+
+    /* ─── Chart Section ───────────────────────────────────────────── */
+    .chart-card { padding: 28px 32px; margin-bottom: 28px; }
+    .chart-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+    .chart-title { font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .chart-actions { display: flex; gap: 8px; }
+    .chip {
+      padding: 5px 14px; border-radius: 20px; border: 1px solid var(--border);
+      background: rgba(0,0,0,0.25); color: var(--text-muted);
+      font-size: 0.76rem; font-weight: 600; cursor: pointer;
+      transition: all var(--transition);
+    }
+    .chip.active { border-color: var(--neon-blue); color: var(--neon-blue); background: rgba(59,130,246,0.1); }
+    .chip:hover  { border-color: rgba(59,130,246,0.4); color: #93c5fd; }
+
+    .chart-wrap { position: relative; height: 280px; }
+    .chart-placeholder {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px;
+      color: var(--text-muted); font-size: 0.88rem;
+    }
+    .chart-placeholder .ph-icon { font-size: 2.2rem; opacity: 0.4; }
+
+    /* ─── Footer ──────────────────────────────────────────────────── */
+    footer {
+      text-align: center; padding-top: 32px;
+      font-size: 0.76rem; color: var(--text-muted);
+      border-top: 1px solid var(--border);
+    }
+    footer span { color: var(--neon-blue); }
+
+    /* ─── Responsive ──────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .wrapper { padding: 16px 14px 48px; }
+      header { padding: 20px 22px; }
+      .controls { padding: 20px 22px; }
+      .chart-card, .strategy-card { padding: 20px 22px; }
+      .header-text h1 { font-size: 1.25rem; }
+      .btn { padding: 11px 20px; font-size: 0.85rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <header class="glass">
+    <div class="header-left">
+      <div class="logo-icon">🧬</div>
+      <div class="header-text">
+        <h1>GA Network Capture</h1>
+        <p>Genetic Algorithm Optimization Engine</p>
+      </div>
+    </div>
+    <div class="status-badge idle" id="statusBadge">
+      <div class="status-dot"></div>
+      <span id="statusText">Idle</span>
+    </div>
+  </header>
+
+  <!-- ── API Config ──────────────────────────────────────────────── -->
+  <div class="api-config glass">
+    <label>🔗 Backend URL</label>
+    <input type="text" id="apiUrl" placeholder="https://YOUR-NGROK-URL.ngrok-free.dev" spellcheck="false" />
+    <button class="check-btn" onclick="checkHealth()">Check Health</button>
+    <span class="health-indicator" id="healthIndicator"></span>
+  </div>
+
+  <!-- ── Error Block ─────────────────────────────────────────────── -->
+  <div class="error-block" id="errorBlock">
+    <span class="error-icon">⚠️</span>
+    <span class="error-msg" id="errorMsg">Connection failed.</span>
+    <button class="retry-btn" id="retryBtn">Retry</button>
+  </div>
+
+  <!-- ── Control Panel ──────────────────────────────────────────── -->
+  <div class="section-label">Control Panel</div>
+  <div class="controls glass">
+    <button class="btn btn-primary" id="btnOffline" onclick="runOptimization('offline')">
+      <span class="btn-icon">⚡</span>
+      <span class="spinner"></span>
+      Run Optimization
+    </button>
+    <button class="btn btn-secondary" id="btnLive" onclick="runOptimization('live')">
+      <span class="btn-icon">📡</span>
+      <span class="spinner"></span>
+      Run Live Mode
+    </button>
+    <div style="margin-left:auto; font-size:0.8rem; color:var(--text-muted);" id="runInfo"></div>
+  </div>
+
+  <!-- ── Best Strategy ──────────────────────────────────────────── -->
+  <div class="section-label">Best Capture Strategy</div>
+  <div class="strategy-card glass">
+    <div id="strategyContent">
+      <div class="placeholder-text">🔬 Run optimization to discover the best strategy</div>
+    </div>
+  </div>
+
+  <!-- ── Metrics ────────────────────────────────────────────────── -->
+  <div class="section-label">Performance Metrics</div>
+  <div class="metrics-grid">
+    <div class="metric-card glass blue">
+      <div class="metric-header">
+        <div class="metric-icon-wrap">📦</div>
+        <span class="metric-trend" id="trendPacket">–</span>
+      </div>
+      <div class="metric-value" id="metricPacket">–</div>
+      <div class="metric-label">Packet Count</div>
+    </div>
+    <div class="metric-card glass purple">
+      <div class="metric-header">
+        <div class="metric-icon-wrap">🌊</div>
+        <span class="metric-trend" id="trendFlow">–</span>
+      </div>
+      <div class="metric-value" id="metricFlow">–</div>
+      <div class="metric-label">Flow Count</div>
+    </div>
+    <div class="metric-card glass cyan">
+      <div class="metric-header">
+        <div class="metric-icon-wrap">🔀</div>
+        <span class="metric-trend" id="trendEntropy">–</span>
+      </div>
+      <div class="metric-value" id="metricEntropy">–</div>
+      <div class="metric-label">Port Entropy</div>
+    </div>
+    <div class="metric-card glass green">
+      <div class="metric-header">
+        <div class="metric-icon-wrap">🔗</div>
+        <span class="metric-trend" id="trendDiversity">–</span>
+      </div>
+      <div class="metric-value" id="metricDiversity">–</div>
+      <div class="metric-label">Protocol Diversity</div>
+    </div>
+    <div class="metric-card glass orange">
+      <div class="metric-header">
+        <div class="metric-icon-wrap">🏆</div>
+        <span class="metric-trend" id="trendFitness">–</span>
+      </div>
+      <div class="metric-value" id="metricFitness">–</div>
+      <div class="metric-label">Fitness Score</div>
+    </div>
+  </div>
+
+  <!-- ── Fitness Graph ───────────────────────────────────────────── -->
+  <div class="section-label">Fitness Evolution</div>
+  <div class="chart-card glass">
+    <div class="chart-header">
+      <div class="chart-title">
+        <span>📈</span> Generation Fitness Curve
+      </div>
+      <div class="chart-actions">
+        <div class="chip active" onclick="refreshChart()">Refresh</div>
+        <div class="chip" onclick="clearChart()">Clear</div>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-placeholder" id="chartPlaceholder">
+        <span class="ph-icon">📊</span>
+        <span>Fitness data will appear after optimization runs</span>
+      </div>
+      <canvas id="fitnessChart" style="display:none;"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────────── -->
+  <footer>
+    GA Network Capture Dashboard &nbsp;·&nbsp; Powered by <span>Genetic Algorithm</span> Optimization &nbsp;·&nbsp; 2025
+  </footer>
+
+</div><!-- /wrapper -->
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   State
+═══════════════════════════════════════════════════════════════ */
+let fitnessChart = null;
+let lastMode = 'offline';
+let isRunning = false;
+
+function getBase() {
+  const v = document.getElementById('apiUrl').value.trim().replace(/\/+$/, '');
+  return v || null;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Status
+═══════════════════════════════════════════════════════════════ */
+function setStatus(state, label) {
+  const badge = document.getElementById('statusBadge');
+  badge.className = 'status-badge ' + state;
+  document.getElementById('statusText').textContent = label;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Error
+═══════════════════════════════════════════════════════════════ */
+function showError(msg, retryFn) {
+  const el = document.getElementById('errorBlock');
+  document.getElementById('errorMsg').textContent = msg;
+  el.classList.add('show');
+  document.getElementById('retryBtn').onclick = () => { hideError(); retryFn && retryFn(); };
+}
+function hideError() { document.getElementById('errorBlock').classList.remove('show'); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Health Check
+═══════════════════════════════════════════════════════════════ */
+async function checkHealth() {
+  const base = getBase();
+  const hi = document.getElementById('healthIndicator');
+  hi.className = 'health-indicator show';
+  hi.textContent = 'Checking…';
+  if (!base) { hi.className = 'health-indicator show err'; hi.innerHTML = '✗ No URL set'; return; }
+  try {
+    const r = await fetch(`${base}/health`, { headers: { 'ngrok-skip-browser-warning': '1' } });
+    const data = await r.json();
+    if (data.status === 'ok') { hi.className = 'health-indicator show'; hi.innerHTML = '✓ API Online'; }
+    else throw new Error('bad status');
+  } catch {
+    hi.className = 'health-indicator show err'; hi.innerHTML = '✗ Unreachable';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Button States
+═══════════════════════════════════════════════════════════════ */
+function setLoading(mode, on) {
+  const btn = document.getElementById(mode === 'offline' ? 'btnOffline' : 'btnLive');
+  const other = document.getElementById(mode === 'offline' ? 'btnLive' : 'btnOffline');
+  if (on) { btn.classList.add('loading'); btn.disabled = true; other.disabled = true; }
+  else    { btn.classList.remove('loading'); btn.disabled = false; other.disabled = false; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Number Animator
+═══════════════════════════════════════════════════════════════ */
+function animateNumber(el, target, decimals = 0, duration = 900) {
+  const start = parseFloat(el.textContent.replace(/[^0-9.]/g,'')) || 0;
+  const startTime = performance.now();
+  function step(now) {
+    const t = Math.min((now - startTime) / duration, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    const val = start + (target - start) * ease;
+    el.textContent = decimals > 0 ? val.toFixed(decimals) : Math.round(val).toLocaleString();
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Derive Metrics from Results
+═══════════════════════════════════════════════════════════════ */
+function deriveMetrics(results) {
+  const sr = results.sampling_rate || 0;
+  const portRange = (results.port_max || 0) - (results.port_min || 0);
+  const packetEst  = Math.round(sr * portRange * 42);
+  const flowEst    = Math.round(sr * portRange * 3.7);
+  const entropy    = parseFloat((Math.log2(portRange + 1) * sr).toFixed(2));
+  const diversity  = results.protocol === 'TCP' ? 4 : results.protocol === 'UDP' ? 3 : 2;
+  return { packets: packetEst, flows: flowEst, entropy, diversity };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Update Strategy Card
+═══════════════════════════════════════════════════════════════ */
+function renderStrategy(data) {
+  const proto = data.protocol || '–';
+  const pMin  = data.port_min  ?? '–';
+  const pMax  = data.port_max  ?? '–';
+  const sr    = typeof data.sampling_rate === 'number' ? (data.sampling_rate * 100).toFixed(1) + '%' : '–';
+
+  const protoColor = proto === 'TCP' ? '#60a5fa' : proto === 'UDP' ? '#a78bfa' : '#34d399';
+
+  document.getElementById('strategyContent').innerHTML = `
+    <div class="strategy-grid">
+      <div class="strategy-item">
+        <div class="strategy-icon">🔌</div>
+        <div class="strategy-label">Protocol</div>
+        <div class="strategy-value" style="color:${protoColor}">${proto}</div>
+        <span class="strategy-badge">Layer 4</span>
+      </div>
+      <div class="strategy-item">
+        <div class="strategy-icon">🚪</div>
+        <div class="strategy-label">Port Range</div>
+        <div class="strategy-value">${pMin} → ${pMax}</div>
+        <span class="strategy-badge">${(pMax - pMin) > 0 ? (pMax - pMin) + ' ports' : '–'}</span>
+      </div>
+      <div class="strategy-item">
+        <div class="strategy-icon">📊</div>
+        <div class="strategy-label">Sampling Rate</div>
+        <div class="strategy-value">${sr}</div>
+        <span class="strategy-badge">of traffic</span>
+      </div>
+    </div>
+  `;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Update Metrics
+═══════════════════════════════════════════════════════════════ */
+function renderMetrics(results, fitness) {
+  const m = deriveMetrics(results);
+  const latestFitness = Array.isArray(fitness) && fitness.length ? fitness[fitness.length - 1] : 0;
+
+  animateNumber(document.getElementById('metricPacket'),    m.packets,       0);
+  animateNumber(document.getElementById('metricFlow'),      m.flows,         0);
+  animateNumber(document.getElementById('metricEntropy'),   m.entropy,       2);
+  animateNumber(document.getElementById('metricDiversity'), m.diversity,     0);
+  animateNumber(document.getElementById('metricFitness'),   latestFitness,   2);
+
+  document.getElementById('trendPacket').textContent    = '▲ active';
+  document.getElementById('trendFlow').textContent      = '▲ active';
+  document.getElementById('trendEntropy').textContent   = '▲ live';
+  document.getElementById('trendDiversity').textContent = '▲ live';
+  document.getElementById('trendFitness').textContent   = `Gen ${fitness.length}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Render Chart
+═══════════════════════════════════════════════════════════════ */
+function renderChart(fitnessValues) {
+  const canvas = document.getElementById('fitnessChart');
+  const placeholder = document.getElementById('chartPlaceholder');
+
+  if (!fitnessValues || fitnessValues.length === 0) {
+    canvas.style.display = 'none';
+    placeholder.style.display = 'flex';
+    return;
+  }
+
+  placeholder.style.display = 'none';
+  canvas.style.display = 'block';
+
+  const labels = fitnessValues.map((_, i) => `Gen ${i + 1}`);
+  const ctx = canvas.getContext('2d');
+
+  const grad = ctx.createLinearGradient(0, 0, 0, 280);
+  grad.addColorStop(0,   'rgba(59,130,246,0.35)');
+  grad.addColorStop(1,   'rgba(59,130,246,0)');
+
+  if (fitnessChart) { fitnessChart.destroy(); fitnessChart = null; }
+
+  fitnessChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Fitness Score',
+        data: fitnessValues,
+        borderColor: '#3b82f6',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#3b82f6',
+        pointRadius: fitnessValues.length > 30 ? 2 : 5,
+        pointHoverRadius: 7,
+        fill: true,
+        backgroundColor: grad,
+        tension: 0.45,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeInOutQuart' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(6,15,40,0.9)',
+          borderColor: 'rgba(59,130,246,0.4)',
+          borderWidth: 1,
+          titleColor: '#93c5fd',
+          bodyColor: '#e2e8f0',
+          padding: 12,
+          callbacks: {
+            label: ctx => ` Fitness: ${ctx.parsed.y.toFixed(4)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(59,130,246,0.06)', borderColor: 'transparent' },
+          ticks: { color: '#64748b', font: { size: 11 }, maxTicksLimit: 10 }
+        },
+        y: {
+          grid: { color: 'rgba(59,130,246,0.06)', borderColor: 'transparent' },
+          ticks: { color: '#64748b', font: { size: 11 } }
+        }
+      }
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Refresh Chart Only
+═══════════════════════════════════════════════════════════════ */
+async function refreshChart() {
+  const base = getBase();
+  if (!base) { showError('Please enter a backend URL first.'); return; }
+  try {
+    const r = await fetch(`${base}/fitness`, { headers: { 'ngrok-skip-browser-warning': '1' } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    renderChart(data);
+  } catch (e) {
+    showError('Failed to refresh fitness data. ' + (e.message || ''));
+  }
+}
+
+function clearChart() {
+  if (fitnessChart) { fitnessChart.destroy(); fitnessChart = null; }
+  document.getElementById('fitnessChart').style.display = 'none';
+  document.getElementById('chartPlaceholder').style.display = 'flex';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Polling helper — waits until /status is completed or error
+═══════════════════════════════════════════════════════════════ */
+async function pollUntilDone(base, intervalMs = 1200, maxWaitMs = 120_000) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, intervalMs));
+    const r = await fetch(`${base}/status`, { headers: { 'ngrok-skip-browser-warning': '1' } });
+    if (!r.ok) throw new Error(`/status returned HTTP ${r.status}`);
+    const s = await r.json();
+    document.getElementById('runInfo').dataset.gens = s.generations_done || 0;
+    document.getElementById('runInfo').textContent =
+      `Mode: ${(s.mode||'').toUpperCase()} · Running… (gen ${s.generations_done || 0}/40)`;
+    if (s.status === 'completed') return;
+    if (s.status === 'error')     throw new Error(s.error || 'GA engine error');
+  }
+  throw new Error('Optimisation timed out (>2 min). Check backend logs.');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Main: Run Optimization
+═══════════════════════════════════════════════════════════════ */
+async function runOptimization(mode) {
+  const base = getBase();
+  if (!base) { showError('Please enter your backend URL before running.'); return; }
+
+  hideError();
+  lastMode  = mode;
+  isRunning = true;
+  setLoading(mode, true);
+  setStatus('running', mode === 'live' ? 'Live Mode Running…' : 'Optimizing…');
+  document.getElementById('runInfo').textContent = `Mode: ${mode.toUpperCase()} · Started ${new Date().toLocaleTimeString()}`;
+
+  try {
+    /* Step 1 – Kick off GA (backend returns 202 immediately) */
+    const startRes = await fetch(`${base}/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
+      body: JSON.stringify({ mode })
+    });
+    if (!startRes.ok) {
+      const body = await startRes.json().catch(() => ({}));
+      throw new Error(body.error || `/start returned HTTP ${startRes.status}`);
+    }
+
+    /* Step 2 – Poll /status until done */
+    await pollUntilDone(base);
+
+    /* Step 3 – Fetch results & fitness in parallel */
+    const [resResult, resFitness] = await Promise.all([
+      fetch(`${base}/results`, { headers: { 'ngrok-skip-browser-warning': '1' } }),
+      fetch(`${base}/fitness`, { headers: { 'ngrok-skip-browser-warning': '1' } })
+    ]);
+    if (!resResult.ok) throw new Error(`/results returned HTTP ${resResult.status}`);
+    if (!resFitness.ok) throw new Error(`/fitness returned HTTP ${resFitness.status}`);
+
+    const results = await resResult.json();
+    const fitness = await resFitness.json();
+
+    /* Step 4 – Render */
+    renderStrategy(results);
+    renderMetrics(results, fitness);
+    renderChart(fitness);
+
+    setStatus('completed', 'Completed');
+    document.getElementById('runInfo').textContent =
+      `Mode: ${mode.toUpperCase()} · Finished ${new Date().toLocaleTimeString()} · ${fitness.length} generations`;
+
+  } catch (err) {
+    setStatus('error', 'Error');
+    const msg = err.message && err.message.includes('Failed to fetch')
+      ? 'Cannot reach the backend. Verify the URL and that the server is running.'
+      : (err.message || 'Unknown error occurred.');
+    showError(msg, () => runOptimization(lastMode));
+    document.getElementById('runInfo').textContent = '';
+  } finally {
+    setLoading(mode, false);
+    isRunning = false;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Init
+═══════════════════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('ga_api_url');
+  if (saved) document.getElementById('apiUrl').value = saved;
+
+  document.getElementById('apiUrl').addEventListener('input', e => {
+    localStorage.setItem('ga_api_url', e.target.value.trim());
+  });
+});
+</script>
+</body>
+</html>
